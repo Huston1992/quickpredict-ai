@@ -1,5 +1,5 @@
 # 🎯 QuickPredict AI Agent
-![Uploading {BD14F932-9E92-4AF6-8745-A99934105617}.png…]()
+![{BD14F932-9E92-4AF6-8745-A99934105617}](https://github.com/user-attachments/assets/4e601227-f554-40d8-a361-1a3143164ca8)
 
 > 🤖 AI-powered price prediction agent that analyzes cryptocurrency market data and predicts 30-second price movements using technical analysis and machine learning.
 

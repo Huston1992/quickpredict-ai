@@ -205,7 +205,7 @@ class CryptoAgent:
         pred_direction = "UP" if "UP" in prediction else "DOWN"
         logger.info(f"{pred_color}DIRECTION: {pred_direction}{Style.RESET_ALL}")
         
-        # Fix AI analysis text formatting - просто берем текст между REASON: и CONFIDENCE:
+        # Fix AI analysis text formatting - get text between REASON: and CONFIDENCE:
         analysis_text = prediction.split('REASON:')[1].split('CONFIDENCE:')[0].strip()
         logger.info(Fore.CYAN + f"ANALYSIS: {analysis_text}" + Style.RESET_ALL)
         
@@ -221,9 +221,9 @@ class CryptoAgent:
         acc_color = Fore.GREEN if stats['accuracy'] >= 70 else (Fore.YELLOW if stats['accuracy'] >= 55 else Fore.RED)
         logger.info(f"Success Rate: {acc_color}{stats['accuracy']:.1f}%{Style.RESET_ALL}")
         logger.info(f"Avg Confidence: {stats['avg_confidence']:.1f}%")
-        logger.info(f"Best Streak: (*) {stats['best_streak']} predictions")  # Заменил 🏆 на (*)
+        logger.info(f"Best Streak: (*) {stats['best_streak']} predictions")  # Replaced 🏆 with (*)
         
-        # Заменил эмодзи на текстовые символы
+        # Replace emoji with text symbols
         streak_symbol = "(!!!)" if stats['current_streak'] >= 3 else "(*)"
         logger.info(f"Current Streak: {streak_symbol} {stats['current_streak']} predictions")
         
@@ -232,18 +232,18 @@ class CryptoAgent:
     def get_current_price(self):
         """Get current BTC price from Binance"""
         try:
-            # Пробуем без прокси
+            # Try without proxy
             response = requests.get(
                 f"{BINANCE_BASE_URL}/api/v3/ticker/price",
                 params={"symbol": SYMBOL},
                 timeout=10,
-                proxies=None  # Явно отключаем прокси
+                proxies=None  # Explicitly disable proxy
             )
             response.raise_for_status()
             return response.json()["price"]
         except requests.exceptions.RequestException as e:
             logger.error(f"{Fore.RED}{EMOJI['error']} Error getting price: {str(e)}{Style.RESET_ALL}")
-            # Можно добавить резервный источник данных
+            # Can add fallback data source here
             return None
             
     def get_historical_data(self):

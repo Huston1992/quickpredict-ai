@@ -1,0 +1,31 @@
+# Core dependencies
+python-dotenv==1.0.0
+requests==2.31.0
+pandas==2.1.4
+numpy==1.24.3
+
+# Technical Analysis
+ta==0.10.2
+pandas-ta==0.3.14b
+
+# API Integrations
+openai==1.8.0
+supabase==2.0.3
+httpx==0.24.1
+
+# Visualization
+colorama==0.4.6
+
+# Utilities
+python-dateutil==2.8.2
+pytz==2023.3
+schedule==1.2.1
+
+# Development
+pytest==7.4.3
+black==23.11.0
+flake8==6.1.0
+
+# Optional - for Jupyter notebooks if needed
+jupyter==1.0.0
+notebook==7.0.6 

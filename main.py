@@ -17,7 +17,9 @@ from config import (
     SUPABASE_KEY,
     UPDATE_INTERVAL,
     HISTORICAL_DATA_MINUTES,
-    EMOJI
+    EMOJI,
+    BINANCE_BASE_URL,
+    SYMBOL
 )
 from technical_analysis import TechnicalAnalyzer
 from database import Database
@@ -228,18 +230,20 @@ class CryptoAgent:
         logger.info("\n" + Fore.BLUE + "═" * 50 + Style.RESET_ALL + "\n")
 
     def get_current_price(self):
-        """Get current BTC/USDT price from Binance"""
+        """Get current BTC price from Binance"""
         try:
+            # Пробуем без прокси
             response = requests.get(
-                f"{self.base_url}/api/v3/ticker/price",
-                params={"symbol": self.symbol},
-                timeout=self.request_timeout
+                f"{BINANCE_BASE_URL}/api/v3/ticker/price",
+                params={"symbol": SYMBOL},
+                timeout=10,
+                proxies=None  # Явно отключаем прокси
             )
-            if response.status_code == 200:
-                return float(response.json()['price'])
-            return None
-        except requests.Timeout:
-            logger.error(f"{Fore.RED}{EMOJI['warning']} Timeout getting price{Style.RESET_ALL}")
+            response.raise_for_status()
+            return response.json()["price"]
+        except requests.exceptions.RequestException as e:
+            logger.error(f"{Fore.RED}{EMOJI['error']} Error getting price: {str(e)}{Style.RESET_ALL}")
+            # Можно добавить резервный источник данных
             return None
             
     def get_historical_data(self):

@@ -9,8 +9,8 @@ ta==0.11.0
 pandas-ta==0.3.14b
 
 # API Integrations
-openai==1.6.1
-supabase==2.0.3
+openai==1.9.0
+supabase==2.3.1
 httpx==0.24.1
 
 # Visualization
@@ -22,10 +22,13 @@ pytz==2023.3
 schedule==1.2.1
 
 # Development
-pytest==7.4.3
+pytest==7.4.4
 black==23.11.0
 flake8==6.1.0
 
 # Optional - for Jupyter notebooks if needed
 jupyter==1.0.0
-notebook==7.0.6 
+notebook==7.0.6
+
+# Added from the code block
+pydantic==2.5.3 

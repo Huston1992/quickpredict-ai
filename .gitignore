@@ -9,35 +9,13 @@ crypto_agent.log
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
+.env
 venv/
-ENV/
 
 # IDE
 .idea/
 .vscode/
-*.swp
-*.swo
 
 # OS
 .DS_Store
@@ -54,24 +32,9 @@ ENV/
 # Python cache files
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+.env
+venv/
 
 # Logs and databases
 *.log
@@ -133,3 +96,7 @@ MANIFEST
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+
+# Project specific
+crypto_agent.log
+predictions_history.json

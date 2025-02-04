@@ -2,20 +2,26 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 import logging
-from config import BINANCE_BASE_URL, SYMBOL
+import time
+from config.settings import BINANCE_BASE_URL, SYMBOL
 
 logger = logging.getLogger(__name__)
 
 class BinanceClient:
-    def __init__(self):
+    def __init__(self, use_proxy: bool = False):
         self.base_url = BINANCE_BASE_URL
         self.symbol = SYMBOL
+        self.use_proxy = use_proxy
+        self.proxies = {
+            'http': 'http://127.0.0.1:10801',
+            'https': 'http://127.0.0.1:10801'
+        } if use_proxy else None
 
     def _make_request(self, endpoint, params=None):
         """Make a request to Binance API"""
         try:
             url = f"{self.base_url}{endpoint}"
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, proxies=self.proxies)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:

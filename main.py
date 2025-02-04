@@ -9,10 +9,13 @@ import sys
 import traceback
 import signal
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import requests
 from colorama import Fore, Style, init
-from config import (
+from typing import Optional, Dict, Any
+
+# Импорты из config
+from config.settings import (
     SUPABASE_URL,
     SUPABASE_KEY,
     UPDATE_INTERVAL,
@@ -21,9 +24,15 @@ from config import (
     BINANCE_BASE_URL,
     SYMBOL
 )
-from technical_analysis import TechnicalAnalyzer
-from database import Database
-from openai_client import get_prediction
+
+# Импорты из src
+from src.utils.binance_client import BinanceClient
+from src.utils.openai_client import get_prediction
+from src.analysis.technical_analysis import TechnicalAnalyzer
+from src.analysis.prediction_analyzer import PredictionAnalyzer
+from src.database.supabase import SupabaseClient
+from src.models.prediction import Prediction
+from src.models.metrics import PerformanceMetrics
 
 # Enable Windows console virtual terminal sequences
 if os.name == 'nt':
@@ -50,6 +59,9 @@ logging.basicConfig(
 # Set logging levels for external libraries
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("hpack").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 class CryptoAgent:
     """
@@ -60,7 +72,7 @@ class CryptoAgent:
     def __init__(self):
         """Initialize the CryptoAgent with necessary components and settings."""
         self.technical_analyzer = TechnicalAnalyzer()
-        self.db = Database(SUPABASE_URL, SUPABASE_KEY)
+        self.db = SupabaseClient(SUPABASE_URL, SUPABASE_KEY)
         self.last_prediction_id = None
         self.prediction_errors = 0
         self.max_errors = 3
@@ -72,7 +84,7 @@ class CryptoAgent:
         self.klines_limit = 50
         self.request_timeout = 10
     
-    def get_price_color(self, price_change):
+    def get_price_color(self, price_change: float) -> str:
         """Return color based on price change"""
         if price_change > 0:
             return Fore.GREEN
@@ -80,7 +92,7 @@ class CryptoAgent:
             return Fore.RED
         return Fore.WHITE
     
-    def get_rsi_color(self, rsi):
+    def get_rsi_color(self, rsi: float) -> str:
         """Return color based on RSI value"""
         if rsi >= 70:
             return Fore.RED
@@ -88,7 +100,7 @@ class CryptoAgent:
             return Fore.GREEN
         return Fore.YELLOW
     
-    def format_prediction(self, prediction):
+    def format_prediction(self, prediction: Optional[str]) -> str:
         """Format the prediction for display"""
         if not prediction or prediction.strip() == '':
             return "❌ Prediction error"
@@ -147,32 +159,55 @@ class CryptoAgent:
             
             # Get AI prediction
             try:
-                prediction = get_prediction(analysis_summary)
-                if prediction and prediction.strip():
-                    # Save prediction to database
-                    self.last_prediction_id = self.db.save_prediction(
-                        prediction, 
-                        current_price,
-                        technical_indicator_id
+                prediction_text = get_prediction(analysis_summary)
+                if prediction_text and prediction_text.strip():
+                    # Parse prediction text
+                    direction = 'UP' if 'UP' in prediction_text.upper() else 'DOWN'
+                    confidence = int(''.join(filter(str.isdigit, prediction_text.split('CONFIDENCE:')[1])))
+                    
+                    # Create Prediction object
+                    prediction = Prediction(
+                        id=None,
+                        prediction=prediction_text,
+                        direction=direction,
+                        confidence=confidence,
+                        price_at_prediction=current_price,
+                        technical_indicator_id=technical_indicator_id,
+                        timestamp=datetime.now(timezone.utc)
                     )
+                    
+                    # Save prediction and display results
+                    self.last_prediction_id = self.db.save_prediction(prediction)
                     self.prediction_errors = 0
+                    
+                    # Update performance metrics
+                    metrics = self.db.update_performance_metrics()
+                    
+                    # Display results with confidence from prediction object
+                    self.display_results(
+                        current_price=current_price,
+                        price_change=price_change,
+                        analysis_summary=analysis_summary,
+                        prediction_text=prediction_text,
+                        prediction=prediction,  # Передаем объект prediction
+                        metrics=metrics
+                    )
                 else:
                     logger.error(f"{Fore.RED}{EMOJI['error']} Empty response from OpenAI API{Style.RESET_ALL}")
                     self.prediction_errors += 1
+                    self.display_results(
+                        current_price=current_price,
+                        price_change=price_change,
+                        analysis_summary=analysis_summary,
+                        prediction_text=None,
+                        prediction=None,
+                        metrics=self.db.get_recent_statistics()
+                    )
             except Exception as e:
                 logger.error(f"{Fore.RED}{EMOJI['error']} Error getting prediction: {str(e)}{Style.RESET_ALL}")
                 logger.debug(f"Traceback: {traceback.format_exc()}")
                 self.prediction_errors += 1
-            
-            # Update performance metrics
-            self.db.update_performance_metrics()
-            
-            # Get current statistics for display
-            stats = self.db.get_recent_statistics()
-            
-            # Display results
-            self.display_results(current_price, price_change, analysis_summary, prediction, stats)
-            
+                
         except Exception as e:
             logger.error(f"{Fore.RED}{EMOJI['error']} Program error: {str(e)}{Style.RESET_ALL}")
             logger.debug(f"Traceback: {traceback.format_exc()}")
@@ -182,7 +217,7 @@ class CryptoAgent:
                 logger.error(f"{Fore.RED}{EMOJI['error']} Maximum errors reached. Stopping...{Style.RESET_ALL}")
                 raise
 
-    def display_results(self, current_price, price_change, analysis_summary, prediction, stats):
+    def display_results(self, current_price, price_change, analysis_summary, prediction_text, prediction, metrics):
         """Display analysis results in console"""
         logger.info("\n" + Fore.BLUE + "═" * 50 + Style.RESET_ALL)
         logger.info("\n" + Fore.CYAN + "🔮 QuickPredict AI Agent 🤖" + Style.RESET_ALL)
@@ -201,31 +236,32 @@ class CryptoAgent:
         
         # Prediction section
         logger.info("\n" + Fore.MAGENTA + "🎯 30-Second Prediction:" + Style.RESET_ALL)
-        pred_color = Fore.GREEN if "UP" in prediction else Fore.RED
-        pred_direction = "UP" if "UP" in prediction else "DOWN"
-        logger.info(f"{pred_color}DIRECTION: {pred_direction}{Style.RESET_ALL}")
-        
-        # Fix AI analysis text formatting - get text between REASON: and CONFIDENCE:
-        analysis_text = prediction.split('REASON:')[1].split('CONFIDENCE:')[0].strip()
-        logger.info(Fore.CYAN + f"ANALYSIS: {analysis_text}" + Style.RESET_ALL)
-        
-        # Confidence with color based on level
-        confidence = int(''.join(filter(str.isdigit, prediction.split('CONFIDENCE:')[1])))
-        conf_color = Fore.GREEN if confidence >= 80 else (Fore.YELLOW if confidence >= 60 else Fore.RED)
-        logger.info(f"{conf_color}CONFIDENCE: {confidence}%{Style.RESET_ALL}")
+        if prediction_text and prediction:
+            pred_color = Fore.GREEN if prediction.direction == "UP" else Fore.RED
+            logger.info(f"{pred_color}DIRECTION: {prediction.direction}{Style.RESET_ALL}")
+            
+            # Fix AI analysis text formatting - get text between REASON: and CONFIDENCE:
+            analysis_text = prediction_text.split('REASON:')[1].split('CONFIDENCE:')[0].strip()
+            logger.info(Fore.CYAN + f"ANALYSIS: {analysis_text}" + Style.RESET_ALL)
+            
+            # Confidence with color based on level
+            conf_color = Fore.GREEN if prediction.confidence >= 80 else (Fore.YELLOW if prediction.confidence >= 60 else Fore.RED)
+            logger.info(f"{conf_color}CONFIDENCE: {prediction.confidence}%{Style.RESET_ALL}")
+        else:
+            logger.info(f"{Fore.RED}No prediction available{Style.RESET_ALL}")
         
         # Performance Statistics
         logger.info("\n" + Fore.YELLOW + "📈 Performance Metrics:" + Style.RESET_ALL)
-        logger.info(f"Total Predictions: {stats['total_predictions']}")
-        
-        acc_color = Fore.GREEN if stats['accuracy'] >= 70 else (Fore.YELLOW if stats['accuracy'] >= 55 else Fore.RED)
-        logger.info(f"Success Rate: {acc_color}{stats['accuracy']:.1f}%{Style.RESET_ALL}")
-        logger.info(f"Avg Confidence: {stats['avg_confidence']:.1f}%")
-        logger.info(f"Best Streak: (*) {stats['best_streak']} predictions")  # Replaced 🏆 with (*)
-        
-        # Replace emoji with text symbols
-        streak_symbol = "(!!!)" if stats['current_streak'] >= 3 else "(*)"
-        logger.info(f"Current Streak: {streak_symbol} {stats['current_streak']} predictions")
+        if metrics:
+            logger.info(f"Total Predictions: {metrics.total_predictions}")
+            acc_color = Fore.GREEN if metrics.accuracy >= 70 else (Fore.YELLOW if metrics.accuracy >= 55 else Fore.RED)
+            logger.info(f"Success Rate: {acc_color}{metrics.accuracy:.1f}%{Style.RESET_ALL}")
+            logger.info(f"Avg Confidence: {metrics.avg_confidence:.1f}%")
+            logger.info(f"Best Streak: (*) {metrics.best_streak} predictions")
+            streak_symbol = "(!!!)" if metrics.current_streak >= 3 else "(*)"
+            logger.info(f"Current Streak: {streak_symbol} {metrics.current_streak} predictions")
+        else:
+            logger.info("No performance metrics available")
         
         logger.info("\n" + Fore.BLUE + "═" * 50 + Style.RESET_ALL + "\n")
 
@@ -290,7 +326,7 @@ class CryptoAgent:
                     self.prediction_errors += 1
                     
                     if self.prediction_errors >= self.max_errors:
-                        logger.error(f"{Fore.RED}Maximum errors reached. Stopping...{Style.RESET_ALL}")
+                        logger.error(f"{Fore.RED}{EMOJI['error']} Maximum errors reached. Stopping...{Style.RESET_ALL}")
                         break
                     
                     time.sleep(5)  # Пауза перед повторной попыткой
@@ -305,37 +341,41 @@ def signal_handler(signum, frame):
     logger.info(f"{Fore.YELLOW}Received termination signal. Stopping program...{Style.RESET_ALL}")
     sys.exit(0)
 
+def test_supabase_connection():
+    """Test Supabase connection and tables"""
+    try:
+        db = SupabaseClient(SUPABASE_URL, SUPABASE_KEY)
+        
+        # Test predictions table
+        test_pred = db.supabase.table('predictions').select('count').execute()
+        logger.info(f"Found {test_pred.count} predictions")
+        
+        # Test technical_indicators table
+        test_tech = db.supabase.table('technical_indicators').select('count').execute()
+        logger.info(f"Found {test_tech.count} technical indicators")
+        
+        # Test performance_metrics table
+        test_metrics = db.supabase.table('performance_metrics').select('count').execute()
+        logger.info(f"Found {test_metrics.count} performance metrics")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Supabase connection test failed: {str(e)}")
+        logger.debug(f"Traceback: {traceback.format_exc()}")
+        return False
+
 def main():
     """Main function to run the crypto agent"""
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    agent = CryptoAgent()
-    
-    logger.info(f"{Fore.GREEN}{EMOJI['rocket']} Starting Crypto Agent...{Style.RESET_ALL}")
-    logger.info(f"{EMOJI['clock']} Update interval: {UPDATE_INTERVAL} seconds")
-    
-    last_run = time.time() - UPDATE_INTERVAL  # Set last run time in the past
-    
-    # Keep running
-    while True:
-        try:
-            current_time = time.time()
-            if current_time - last_run >= UPDATE_INTERVAL:
-                agent.run_analysis()
-                last_run = current_time
-            time.sleep(1)  # Small pause to prevent CPU overload
-        except KeyboardInterrupt:
-            logger.info(f"\n{Fore.YELLOW}{EMOJI['warning']} Shutting down Crypto Agent...{Style.RESET_ALL}")
-            break
-        except Exception as e:
-            logger.error(f"{Fore.RED}{EMOJI['warning']} Error in main loop: {str(e)}{Style.RESET_ALL}")
-            logger.debug(f"Traceback: {traceback.format_exc()}")
-            time.sleep(5)
-
-if __name__ == "__main__":
     try:
+        # Test database connection
+        if not test_supabase_connection():
+            logger.error("Failed to connect to Supabase. Please check your credentials and connection.")
+            sys.exit(1)
+            
         # Create and run agent
         agent = CryptoAgent()
         agent.run()
@@ -343,4 +383,7 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Fatal error: {str(e)}")
         logger.debug(f"Traceback: {traceback.format_exc()}")
-        sys.exit(1) 
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main() 

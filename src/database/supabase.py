@@ -3,14 +3,19 @@ import traceback
 from datetime import datetime, timezone, timedelta
 from supabase import create_client
 import time
+from config.settings import SUPABASE_URL, SUPABASE_KEY
+from src.database.base import DatabaseInterface
+from src.models.prediction import Prediction
+from src.models.metrics import PerformanceMetrics
+from typing import List, Dict, Any, Optional
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
-class Database:
+class SupabaseClient(DatabaseInterface):
     """Database interface for the prediction agent"""
     
-    def __init__(self, url, key):
+    def __init__(self, url: str, key: str):
         """Initialize database connection"""
         try:
             self.supabase = create_client(url, key)
@@ -36,7 +41,12 @@ class Database:
             logger.debug(f"Traceback: {traceback.format_exc()}")
             raise
             
-    def save_technical_indicators(self, analysis_summary):
+    def connect(self, connection_string: str):
+        """Implement connect method from interface"""
+        url, key = connection_string.split(':')
+        self.__init__(url, key)
+        
+    def save_technical_indicators(self, analysis_summary: Dict[str, Any]) -> Optional[int]:
         """Save technical indicators to database"""
         try:
             data = {
@@ -73,7 +83,7 @@ class Database:
         """Verify a prediction against the current price"""
         try:
             # Get the prediction
-            result = self.supabase.table('predictions').select('*').eq('id', prediction_id).execute()
+            result = self.supabase.table('predictions').select('*').filter('id', 'eq', prediction_id).execute()
             if not result.data:
                 logger.error(f"Prediction {prediction_id} not found")
                 return False
@@ -98,7 +108,7 @@ class Database:
                 'correct': correct
             }
             
-            self.supabase.table('predictions').update(data).eq('id', prediction_id).execute()
+            self.supabase.table('predictions').update(data).filter('id', 'eq', prediction_id).execute()
             
             # Log verification result
             logger.info("==================================================")
@@ -116,80 +126,134 @@ class Database:
             logger.debug(f"Traceback: {traceback.format_exc()}")
             return False
             
-    def update_performance_metrics(self):
-        """Update performance metrics"""
+    def get_predictions(self, verified: bool = None, limit: int = None) -> List[Prediction]:
+        """Get predictions with optional filters using pagination"""
         try:
             all_predictions = []
             last_id = 0
             page_size = 1000
             
             while True:
-                # Get predictions by id range
-                predictions = self.supabase.table('predictions')\
-                    .select('*')\
-                    .eq('verified', True)\
-                    .gt('id', last_id)\
-                    .order('id', desc=False)\
-                    .limit(page_size)\
-                    .execute()
+                # Строим базовый запрос
+                query = self.supabase.table('predictions').select('*')
+                
+                if verified is not None:
+                    query = query.filter('verified', 'eq', verified)
                     
-                if not predictions.data:
+                # Добавляем фильтр по ID для пагинации
+                query = query.filter('id', 'gt', last_id)
+                
+                # Сортируем по ID для стабильной пагинации
+                query = query.order('id', desc=False)
+                
+                # Устанавливаем размер страницы
+                query = query.limit(page_size)
+                
+                result = query.execute()
+                
+                if not result.data:
                     break
                     
-                all_predictions.extend(predictions.data)
+                # Добавляем полученные предсказания
+                all_predictions.extend([
+                    Prediction(
+                        id=p['id'],
+                        prediction=p['prediction'],
+                        direction=p['direction'],
+                        confidence=p['confidence'],
+                        price_at_prediction=p['price_at_prediction'],
+                        technical_indicator_id=p['technical_indicator_id'],
+                        timestamp=datetime.fromisoformat(p['timestamp']),
+                        verified=p.get('verified', False),
+                        correct=p.get('correct'),
+                        actual_direction=p.get('actual_direction')
+                    )
+                    for p in result.data
+                ])
                 
-                if len(predictions.data) < page_size:
+                # Если получили меньше записей чем размер страницы, значит это последняя страница
+                if len(result.data) < page_size:
                     break
                     
-                last_id = predictions.data[-1]['id']
+                # Обновляем last_id для следующей страницы
+                last_id = result.data[-1]['id']
                 
-            if not all_predictions:
-                logger.debug("No verified predictions available for statistics update")
-                return
+            # Сортируем все предсказания по timestamp
+            all_predictions.sort(key=lambda x: x.timestamp, reverse=True)
+            
+            # Применяем лимит если он указан
+            if limit:
+                all_predictions = all_predictions[:limit]
                 
-            # Sort by timestamp
-            sorted_predictions = sorted(all_predictions, key=lambda x: x['timestamp'])
-            
-            total_predictions = len(sorted_predictions)
-            successful_predictions = sum(1 for p in sorted_predictions if p.get('correct', False))
-            accuracy = (successful_predictions / total_predictions) * 100 if total_predictions > 0 else 0
-            
-            # Calculate average confidence
-            total_confidence = sum(p.get('confidence', 0) for p in sorted_predictions)
-            avg_confidence = total_confidence / total_predictions if total_predictions > 0 else 0
-            
-            # Save metrics
-            data = {
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'total_predictions': total_predictions,
-                'correct_predictions': successful_predictions,
-                'accuracy': round(accuracy, 1),
-                'avg_confidence': round(avg_confidence, 1),
-                'best_streak': self.calculate_best_streak(sorted_predictions),
-                'current_streak': self.calculate_current_streak(sorted_predictions)
-            }
-            
-            self.supabase.table('performance_metrics').insert(data).execute()
-            
-            logger.info(f"Statistics updated: {total_predictions} total predictions, "
-                       f"accuracy {accuracy:.1f}%, avg confidence {avg_confidence:.1f}%")
+            return all_predictions
             
         except Exception as e:
-            logger.error(f"Error updating statistics: {str(e)}")
+            logger.error(f"Error getting predictions: {str(e)}")
             logger.debug(f"Traceback: {traceback.format_exc()}")
+            return []
+
+    def update_performance_metrics(self) -> Optional[PerformanceMetrics]:
+        """Update performance metrics"""
+        try:
+            # Получаем все верифицированные предсказания без лимита
+            predictions = self.get_predictions(verified=True)  # Убираем limit=100
             
-    def get_recent_statistics(self):
+            if not predictions:
+                return None
+            
+            total = len(predictions)
+            successful = len([p for p in predictions if p.correct])
+            
+            metrics = PerformanceMetrics(
+                timestamp=datetime.now(timezone.utc),
+                total_predictions=total,
+                correct_predictions=successful,
+                accuracy=(successful / total * 100) if total > 0 else 0,
+                avg_confidence=sum(p.confidence for p in predictions) / total if total > 0 else 0,
+                best_streak=self.calculate_best_streak(predictions),
+                current_streak=self.calculate_current_streak(predictions)
+            )
+            
+            # Сохраняем метрики
+            self.supabase.table('performance_metrics').insert(metrics.model_dump(mode='json')).execute()
+            
+            return metrics
+            
+        except Exception as e:
+            logger.error(f"Error updating performance metrics: {str(e)}")
+            logger.debug(f"Traceback: {traceback.format_exc()}")
+            return None
+            
+    def get_recent_statistics(self) -> Optional[PerformanceMetrics]:
         """Get latest performance metrics"""
         try:
-            result = self.supabase.table('performance_metrics').select('*').order('timestamp', desc=True).limit(1).execute()
-            return result.data[0] if result.data else {
-                'total_predictions': 0,
-                'correct_predictions': 0,
-                'accuracy': 0,
-                'avg_confidence': 0,
-                'best_streak': 0,
-                'current_streak': 0
-            }
+            result = self.supabase.table('performance_metrics')\
+                .select('*')\
+                .order('timestamp', desc=True)\
+                .limit(1)\
+                .execute()
+                
+            if not result.data:
+                return PerformanceMetrics(
+                    timestamp=datetime.now(timezone.utc),
+                    total_predictions=0,
+                    correct_predictions=0,
+                    accuracy=0.0,
+                    avg_confidence=0.0,
+                    best_streak=0,
+                    current_streak=0
+                )
+                
+            data = result.data[0]
+            return PerformanceMetrics(
+                timestamp=datetime.fromisoformat(data['timestamp']),
+                total_predictions=data['total_predictions'],
+                correct_predictions=data['correct_predictions'],
+                accuracy=data['accuracy'],
+                avg_confidence=data['avg_confidence'],
+                best_streak=data['best_streak'],
+                current_streak=data['current_streak']
+            )
             
         except Exception as e:
             logger.error(f"Error getting statistics: {str(e)}")
@@ -211,12 +275,12 @@ class Database:
             except Exception as e:
                 logger.error(f"Error during data cleanup: {str(e)}")
 
-    def calculate_best_streak(self, predictions):
+    def calculate_best_streak(self, predictions: List[Prediction]) -> int:
         """Calculate best prediction streak"""
         current_streak = 0
         best_streak = 0
         for p in predictions:
-            if p.get('correct', False):
+            if p.correct:
                 current_streak += 1
             else:
                 if current_streak > best_streak:
@@ -226,36 +290,30 @@ class Database:
             best_streak = current_streak
         return best_streak
 
-    def calculate_current_streak(self, predictions):
+    def calculate_current_streak(self, predictions: List[Prediction]) -> int:
         """Calculate current prediction streak"""
         current_streak = 0
         for p in reversed(predictions):
-            if p.get('correct', False):
+            if p.correct:
                 current_streak += 1
             else:
                 break
         return current_streak
 
-    def save_prediction(self, prediction_text: str, current_price: float, technical_indicator_id: int) -> int:
-        """Save a new prediction to the database"""
+    def save_prediction(self, prediction: Prediction) -> Optional[int]:
+        """Save prediction to database"""
         try:
-            # Parse prediction text
-            direction = 'UP' if 'UP' in prediction_text.upper() else 'DOWN'
-            confidence = int(''.join(filter(str.isdigit, prediction_text.split('CONFIDENCE:')[1])))
-            
-            # Prepare data
             data = {
-                'prediction': prediction_text,
-                'direction': direction,
-                'confidence': confidence,
-                'price_at_prediction': current_price,
-                'technical_indicator_id': technical_indicator_id
+                'prediction': prediction.prediction,
+                'direction': prediction.direction,
+                'confidence': prediction.confidence,
+                'price_at_prediction': prediction.price_at_prediction,
+                'technical_indicator_id': prediction.technical_indicator_id,
+                'timestamp': prediction.timestamp.isoformat()
             }
             
-            # Insert prediction
             result = self.supabase.table('predictions').insert(data).execute()
             return result.data[0]['id']
-            
         except Exception as e:
             logger.error(f"Error saving prediction: {str(e)}")
             return None

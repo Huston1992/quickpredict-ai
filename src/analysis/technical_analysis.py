@@ -3,7 +3,7 @@ import numpy as np
 from ta.trend import MACD
 from ta.momentum import RSIIndicator
 import logging
-from config import MACD_FAST, MACD_SLOW, MACD_SIGNAL, RSI_PERIOD
+from config.settings import MACD_FAST, MACD_SLOW, MACD_SIGNAL, RSI_PERIOD
 import ta
 from ta.volatility import AverageTrueRange
 from ta.volatility import BollingerBands

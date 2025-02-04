@@ -1,10 +1,14 @@
-# Configuration files with sensitive data
-config.py
-.env
-
-# Logs
-*.log
+# Project specific
+data/
+predictions_*.json
 crypto_agent.log
+
+# Configuration and environment
+.env
+.env.*
+!.env.example
+config.py
+local_settings.py
 
 # Python
 __pycache__/
@@ -14,73 +18,6 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-
-# Environment
-.env
-venv/
-env/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Environment and credentials
-.env
-.venv
-ENV/
-.python-version
-
-# Python cache files
-__pycache__/
-*.py[cod]
-*.so
-.env
-venv/
-
-# Logs and databases
-*.log
-crypto_agent.log
-*.sqlite
-*.db
-
-# IDE specific files
-.idea/
-.vscode/
-*.swp
-*.swo
-.DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-
-# Distribution / packaging
 .Python
 develop-eggs/
 downloads/
@@ -93,16 +30,42 @@ sdist/
 var/
 wheels/
 share/python-wheels/
-*.egg-info/
 .installed.cfg
-*.egg
 MANIFEST
 
-# Local development
-local_settings.py
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+.python-version
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
 db.sqlite3
 db.sqlite3-journal
 
-# Project specific
-crypto_agent.log
-predictions_history.json
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

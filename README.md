@@ -108,3 +108,37 @@ ai_price/
 - Technical indicators
 - Performance tracking
 - Database storage
+
+## Storage Options
+
+The agent supports two storage modes:
+
+### 1. Supabase Cloud Storage (Default)
+- Data stored in the cloud
+- Accessible from anywhere
+- Requires internet connection
+- Perfect for production use
+- Requires Supabase credentials
+
+### 2. Local JSON Storage
+- Data stored locally in JSON files
+- Works offline
+- No external dependencies
+- Perfect for testing and development
+- Automatically manages file rotation
+
+You can choose the storage mode when starting the agent.
+
+## Configuration
+
+### Environment Variables
+```env
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
+UPDATE_INTERVAL=30
+```
+
+### Storage Files
+When using local storage, files are created in the `data/` directory:
+- `predictions_YYYYMMDD_HHMM.json`: Stores predictions and metrics
+- Files are automatically rotated daily

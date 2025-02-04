@@ -10,12 +10,21 @@ crypto_agent.log
 __pycache__/
 *.py[cod]
 *.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Environment
 .env
 venv/
+env/
 
 # IDE
 .idea/
 .vscode/
+*.swp
+*.swo
 
 # OS
 .DS_Store
@@ -24,8 +33,6 @@ Thumbs.db
 # Environment and credentials
 .env
 .venv
-env/
-venv/
 ENV/
 .python-version
 
@@ -58,6 +65,7 @@ crypto_agent.log
 *.ipynb
 
 # Testing
+.pytest_cache/
 .coverage
 htmlcov/
 .tox/
@@ -74,9 +82,7 @@ coverage.xml
 
 # Distribution / packaging
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/

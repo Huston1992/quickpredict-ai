@@ -29,45 +29,20 @@
 - OpenAI API key
 - Supabase account and project
 
-### Installation
+### Setup
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/quickpredict-ai.git
-cd quickpredict-ai
-```
-
-2. Create virtual environment:
-```bash
-python -m venv venv
-```
-
+1. Clone repository
+2. Create virtual environment: `python -m venv venv`
 3. Activate environment:
    - Windows: `.\venv\Scripts\activate`
    - Linux/Mac: `source venv/bin/activate`
-
-4. Install dependencies:
+4. Install dependencies: `pip install -r requirements.txt`
+5. Copy and configure environment variables:
 ```bash
-pip install -r requirements.txt
-```
-
-5. Copy configuration files:
-```bash
-cp config_example.py config.py
 cp .env.example .env
+# Edit .env with your API keys
 ```
-
-6. Update `.env` with your API keys:
-```
-OPENAI_API_KEY=your_openai_api_key_here
-SUPABASE_URL=your_supabase_project_url_here
-SUPABASE_KEY=your_supabase_anon_key_here
-```
-
-7. Run the agent:
-```bash
-python main.py
-```
+6. Run: `python main.py`
 
 ## 📊 Monitoring
 

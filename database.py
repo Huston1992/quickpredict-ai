@@ -119,16 +119,36 @@ class Database:
     def update_performance_metrics(self):
         """Update performance metrics"""
         try:
-            # Get all verified predictions from last 24 hours
-            cutoff_date = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-            predictions = self.supabase.table('predictions').select('*').eq('verified', True).execute()
+            all_predictions = []
+            last_id = 0
+            page_size = 1000
             
-            if not predictions.data:
+            while True:
+                # Get predictions by id range
+                predictions = self.supabase.table('predictions')\
+                    .select('*')\
+                    .eq('verified', True)\
+                    .gt('id', last_id)\
+                    .order('id', desc=False)\
+                    .limit(page_size)\
+                    .execute()
+                    
+                if not predictions.data:
+                    break
+                    
+                all_predictions.extend(predictions.data)
+                
+                if len(predictions.data) < page_size:
+                    break
+                    
+                last_id = predictions.data[-1]['id']
+                
+            if not all_predictions:
                 logger.debug("No verified predictions available for statistics update")
                 return
                 
             # Sort by timestamp
-            sorted_predictions = sorted(predictions.data, key=lambda x: x['timestamp'])
+            sorted_predictions = sorted(all_predictions, key=lambda x: x['timestamp'])
             
             total_predictions = len(sorted_predictions)
             successful_predictions = sum(1 for p in sorted_predictions if p.get('correct', False))
@@ -143,16 +163,16 @@ class Database:
                 'timestamp': datetime.now(timezone.utc).isoformat(),
                 'total_predictions': total_predictions,
                 'correct_predictions': successful_predictions,
-                'accuracy': accuracy,
-                'avg_confidence': avg_confidence,
+                'accuracy': round(accuracy, 1),
+                'avg_confidence': round(avg_confidence, 1),
                 'best_streak': self.calculate_best_streak(sorted_predictions),
                 'current_streak': self.calculate_current_streak(sorted_predictions)
             }
             
             self.supabase.table('performance_metrics').insert(data).execute()
             
-            logger.info(f"Statistics updated: {total_predictions} predictions, accuracy {accuracy:.1f}%, "
-                       f"average confidence {avg_confidence:.1f}%")
+            logger.info(f"Statistics updated: {total_predictions} total predictions, "
+                       f"accuracy {accuracy:.1f}%, avg confidence {avg_confidence:.1f}%")
             
         except Exception as e:
             logger.error(f"Error updating statistics: {str(e)}")

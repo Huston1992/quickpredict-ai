@@ -106,12 +106,7 @@ class TechnicalAnalyzer:
             df['stoch_d'] = stoch.stoch_signal()
             
             # ADX
-            adx = ADXIndicator(
-                high=df['high'],
-                low=df['low'],
-                close=df['close']
-            )
-            df['adx'] = adx.adx()
+            df['adx'] = self.calculate_adx(df)
             
             logger.debug("Indicators successfully calculated")
             return df
@@ -119,6 +114,39 @@ class TechnicalAnalyzer:
         except Exception as e:
             logger.error(f"Error calculating indicators: {str(e)}")
             raise
+
+    def calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculate ADX with protection from division by zero"""
+        try:
+            # Получаем +DI и -DI
+            plus_di = ta.trend.DirectionalIndicator(
+                high=df['high'],
+                low=df['low'],
+                close=df['close'],
+                window=period,
+                fillna=True
+            )
+            
+            # Защита от деления на ноль
+            dip = plus_di._dip
+            din = plus_di._din
+            value = plus_di._atr
+            
+            # Где value == 0, заменяем на очень маленькое число
+            value = np.where(value == 0, 1e-10, value)
+            
+            plus_di = 100 * (dip / value)
+            minus_di = 100 * (din / value)
+            
+            # Рассчитываем ADX
+            dx = abs(plus_di - minus_di) / (plus_di + minus_di) * 100
+            adx = pd.Series(dx).rolling(window=period).mean()
+            
+            return adx.fillna(0)
+            
+        except Exception as e:
+            logger.error(f"Error calculating ADX: {str(e)}")
+            return pd.Series([0] * len(df))
 
     def calculate_short_term_trend(self, df):
         """Calculate short-term (30-second) trend indicators"""

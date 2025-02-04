@@ -134,19 +134,19 @@ class SupabaseClient(DatabaseInterface):
             page_size = 1000
             
             while True:
-                # Строим базовый запрос
+                # Build base query
                 query = self.supabase.table('predictions').select('*')
                 
                 if verified is not None:
                     query = query.filter('verified', 'eq', verified)
                     
-                # Добавляем фильтр по ID для пагинации
+                # Add ID filter for pagination
                 query = query.filter('id', 'gt', last_id)
                 
-                # Сортируем по ID для стабильной пагинации
+                # Sort by ID for stable pagination
                 query = query.order('id', desc=False)
                 
-                # Устанавливаем размер страницы
+                # Set page size
                 query = query.limit(page_size)
                 
                 result = query.execute()
@@ -154,7 +154,7 @@ class SupabaseClient(DatabaseInterface):
                 if not result.data:
                     break
                     
-                # Добавляем полученные предсказания
+                # Add received predictions
                 all_predictions.extend([
                     Prediction(
                         id=p['id'],
@@ -171,17 +171,17 @@ class SupabaseClient(DatabaseInterface):
                     for p in result.data
                 ])
                 
-                # Если получили меньше записей чем размер страницы, значит это последняя страница
+                # If we got less records than page size, this is the last page
                 if len(result.data) < page_size:
                     break
                     
-                # Обновляем last_id для следующей страницы
+                # Update last_id for next page
                 last_id = result.data[-1]['id']
                 
-            # Сортируем все предсказания по timestamp
+            # Sort all predictions by timestamp
             all_predictions.sort(key=lambda x: x.timestamp, reverse=True)
             
-            # Применяем лимит если он указан
+            # Apply limit if specified
             if limit:
                 all_predictions = all_predictions[:limit]
                 
@@ -195,8 +195,8 @@ class SupabaseClient(DatabaseInterface):
     def update_performance_metrics(self) -> Optional[PerformanceMetrics]:
         """Update performance metrics"""
         try:
-            # Получаем все верифицированные предсказания без лимита
-            predictions = self.get_predictions(verified=True)  # Убираем limit=100
+            # Get all verified predictions without limit
+            predictions = self.get_predictions(verified=True)  # Remove limit=100
             
             if not predictions:
                 return None
@@ -214,7 +214,7 @@ class SupabaseClient(DatabaseInterface):
                 current_streak=self.calculate_current_streak(predictions)
             )
             
-            # Сохраняем метрики
+            # Save metrics
             self.supabase.table('performance_metrics').insert(metrics.model_dump(mode='json')).execute()
             
             return metrics

@@ -10,7 +10,7 @@ def sample_klines_data():
         # timestamp, open, high, low, close, volume, close_time, quote_vol, trades, taker_buy_base, taker_buy_quote, ignore
         [1625097600000, "35000", "35100", "34900", "35050", "100", 1625097899999, "3500000", 1000, "50", "1750000", "0"],
         [1625097900000, "35050", "35200", "35000", "35150", "120", 1625098199999, "4200000", 1200, "60", "2100000", "0"],
-        # ... добавим еще данные для полного теста
+        # ... add more data for complete test
     ]
 
 def test_calculate_indicators():

@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 import requests
 from colorama import Fore, Style, init
 from typing import Optional, Dict, Any
+import warnings
+import numpy as np
 
 # Импорты из config
 from config.settings import (
@@ -45,25 +47,33 @@ if os.name == 'nt':
 # Initialize colorama for Windows support
 init()
 
-# Configure logger
-logger = logging.getLogger(__name__)
+# Configure logging with different formatters
+file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_formatter = logging.Formatter('%(message)s')
 
-# Configure logging with UTF-8 encoding
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("crypto_agent.log", encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# File handler with full formatting
+file_handler = logging.FileHandler("crypto_agent.log", encoding='utf-8')
+file_handler.setFormatter(file_formatter)
+file_handler.setLevel(logging.DEBUG)
 
-# Set logging levels for external libraries
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("openai").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("hpack").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
+# Console handler with minimal formatting
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(console_formatter)
+console_handler.setLevel(logging.INFO)
+
+# Configure root logger for file logging only
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+logger.addHandler(file_handler)
+
+# Create separate console logger for UI
+console = logging.getLogger("ui")
+console.addHandler(console_handler)
+console.propagate = False  # Prevent duplicate logging
+console.setLevel(logging.INFO)
+
+# Игнорируем предупреждения от numpy
+warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 class CryptoAgent:
     """
@@ -221,51 +231,74 @@ class CryptoAgent:
 
     def display_results(self, current_price, price_change, analysis_summary, prediction_text, prediction, metrics):
         """Display analysis results in console"""
-        logger.info("\n" + Fore.BLUE + "═" * 50 + Style.RESET_ALL)
-        logger.info("\n" + Fore.CYAN + "🔮 QuickPredict AI Agent 🤖" + Style.RESET_ALL)
-        logger.info("\n" + Fore.YELLOW + f"⏰ Analysis Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}" + Style.RESET_ALL)
+        console = logging.getLogger("ui")
         
-        # Price display with color
+        console.info("\n" + Fore.BLUE + "═" * 50 + Style.RESET_ALL)
+        console.info("\n" + Fore.CYAN + "🔮 QuickPredict AI Agent 🤖" + Style.RESET_ALL)
+        console.info("\n" + Fore.YELLOW + f"⏰ Analysis Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}" + Style.RESET_ALL)
+        
+        # Current price display
         price_color = Fore.GREEN if price_change >= 0 else Fore.RED
         direction = "UP" if price_change >= 0 else "DOWN"
-        logger.info(f"💎 BTC/USDT: {price_color}${current_price:,.2f} ({price_change:+.2f}%) {direction}{Style.RESET_ALL}")
+        console.info(f"\n💎 BTC/USDT: {price_color}${current_price:,.2f} ({price_change:+.2f}%) {direction}{Style.RESET_ALL}")
         
         # Technical Analysis section
-        logger.info("\n" + Fore.CYAN + "📊 Market Analysis:" + Style.RESET_ALL)
-        logger.info(Fore.CYAN + "├─ MACD: " + Fore.WHITE + f"{analysis_summary['macd_color']}" + Style.RESET_ALL)
-        logger.info(Fore.CYAN + "├─ RSI:  " + Fore.YELLOW + f"{analysis_summary['rsi']:.2f}" + Style.RESET_ALL)
-        logger.info(Fore.CYAN + "└─ Vol:  " + Fore.WHITE + f"{analysis_summary['volume_trend']}" + Style.RESET_ALL)
+        console.info("\n" + Fore.CYAN + "📊 Market Analysis:" + Style.RESET_ALL)
+        console.info(Fore.CYAN + "├─ MACD: " + Fore.WHITE + f"{analysis_summary['macd_color']}" + Style.RESET_ALL)
+        console.info(Fore.CYAN + "├─ RSI:  " + Fore.YELLOW + f"{analysis_summary['rsi']:.2f}" + Style.RESET_ALL)
+        console.info(Fore.CYAN + "└─ Vol:  " + Fore.WHITE + f"{analysis_summary['volume_trend']}" + Style.RESET_ALL)
         
-        # Prediction section
-        logger.info("\n" + Fore.MAGENTA + "🎯 30-Second Prediction:" + Style.RESET_ALL)
+        # Current Prediction section
+        console.info("\n" + Fore.MAGENTA + "🎯 New Prediction:" + Style.RESET_ALL)
         if prediction_text and prediction:
             pred_color = Fore.GREEN if prediction.direction == "UP" else Fore.RED
-            logger.info(f"{pred_color}DIRECTION: {prediction.direction}{Style.RESET_ALL}")
+            pred_emoji = "📈" if prediction.direction == "UP" else "📉"
+            console.info(f"{pred_emoji} Direction: {pred_color}{prediction.direction}{Style.RESET_ALL}")
             
-            # Fix AI analysis text formatting - get text between REASON: and CONFIDENCE:
+            # Fix AI analysis text formatting
             analysis_text = prediction_text.split('REASON:')[1].split('CONFIDENCE:')[0].strip()
-            logger.info(Fore.CYAN + f"ANALYSIS: {analysis_text}" + Style.RESET_ALL)
+            console.info(Fore.CYAN + f"💡 Analysis: {analysis_text}" + Style.RESET_ALL)
             
             # Confidence with color based on level
             conf_color = Fore.GREEN if prediction.confidence >= 80 else (Fore.YELLOW if prediction.confidence >= 60 else Fore.RED)
-            logger.info(f"{conf_color}CONFIDENCE: {prediction.confidence}%{Style.RESET_ALL}")
+            console.info(f"🎯 Confidence: {conf_color}{prediction.confidence}%{Style.RESET_ALL}")
         else:
-            logger.info(f"{Fore.RED}No prediction available{Style.RESET_ALL}")
+            console.info(f"{Fore.RED}No prediction available{Style.RESET_ALL}")
         
         # Performance Statistics
-        logger.info("\n" + Fore.YELLOW + "📈 Performance Metrics:" + Style.RESET_ALL)
+        console.info("\n" + Fore.YELLOW + "📈 Performance Metrics:" + Style.RESET_ALL)
         if metrics:
-            logger.info(f"Total Predictions: {metrics.total_predictions}")
+            console.info(f"Total Predictions: {metrics.total_predictions}")
             acc_color = Fore.GREEN if metrics.accuracy >= 70 else (Fore.YELLOW if metrics.accuracy >= 55 else Fore.RED)
-            logger.info(f"Success Rate: {acc_color}{metrics.accuracy:.1f}%{Style.RESET_ALL}")
-            logger.info(f"Avg Confidence: {metrics.avg_confidence:.1f}%")
-            logger.info(f"Best Streak: (*) {metrics.best_streak} predictions")
+            console.info(f"Success Rate: {acc_color}{metrics.accuracy:.1f}%{Style.RESET_ALL}")
+            console.info(f"Avg Confidence: {metrics.avg_confidence:.1f}%")
+            console.info(f"Best Streak: (*) {metrics.best_streak} predictions")
             streak_symbol = "(!!!)" if metrics.current_streak >= 3 else "(*)"
-            logger.info(f"Current Streak: {streak_symbol} {metrics.current_streak} predictions")
+            console.info(f"Current Streak: {streak_symbol} {metrics.current_streak} predictions")
         else:
-            logger.info("No performance metrics available")
+            console.info("No performance metrics available")
         
-        logger.info("\n" + Fore.BLUE + "═" * 50 + Style.RESET_ALL + "\n")
+        # Previous Prediction Results (moved to bottom)
+        predictions = self.db.get_predictions(verified=True, limit=5)
+        if predictions:
+            last_verified = predictions[0]
+            console.info("\n" + Fore.MAGENTA + "📜 Previous Prediction Review:" + Style.RESET_ALL)
+            
+            # Price change info
+            price_diff = current_price - last_verified.price_at_prediction
+            price_change_pct = (price_diff / last_verified.price_at_prediction) * 100
+            
+            # Result with emojis and colors
+            result_emoji = "✅" if last_verified.correct else "❌"
+            result_color = Fore.GREEN if last_verified.correct else Fore.RED
+            pred_emoji = "📈" if last_verified.direction == "UP" else "📉"
+            
+            # Compact display
+            console.info(f"{pred_emoji} Predicted: {last_verified.direction} ({last_verified.confidence}%)")
+            console.info(f"💰 Price Movement: ${last_verified.price_at_prediction:,.2f} → {price_color}${current_price:,.2f} ({price_change_pct:+.2f}%){Style.RESET_ALL}")
+            console.info(f"{result_emoji} Outcome: {result_color}{last_verified.actual_direction} {result_emoji}{Style.RESET_ALL}")
+        
+        console.info("\n" + Fore.BLUE + "═" * 50 + Style.RESET_ALL + "\n")
 
     def get_current_price(self):
         """Get current BTC price from Binance"""
@@ -348,6 +381,11 @@ def signal_handler(signum, frame):
 
 def test_supabase_connection():
     """Test Supabase connection and tables"""
+    # Если URL или ключ не указаны, пропускаем проверку
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        logger.info("Supabase credentials not provided, skipping connection test")
+        return True
+        
     try:
         db = SupabaseClient(SUPABASE_URL, SUPABASE_KEY)
         
@@ -365,9 +403,9 @@ def test_supabase_connection():
         
         return True
     except Exception as e:
-        logger.error(f"Supabase connection test failed: {str(e)}")
+        logger.warning(f"Supabase connection test failed: {str(e)}")
         logger.debug(f"Traceback: {traceback.format_exc()}")
-        return False
+        return True  # Возвращаем True, чтобы программа продолжила работу
 
 def choose_storage() -> DatabaseInterface:
     """Let user choose storage type"""
@@ -377,38 +415,49 @@ def choose_storage() -> DatabaseInterface:
     
     print(f"{Fore.YELLOW}Please choose where to store prediction data:{Style.RESET_ALL}\n")
     
-    print(f"{Fore.CYAN}1. {Fore.WHITE}Supabase Cloud Database")
-    print(f"   {Fore.LIGHTBLACK_EX}• Data stored in the cloud")
-    print(f"   • Accessible from anywhere")
-    print(f"   • Requires internet connection{Style.RESET_ALL}\n")
-    
-    print(f"{Fore.CYAN}2. {Fore.WHITE}Local JSON Storage")
-    print(f"   {Fore.LIGHTBLACK_EX}• Data stored on your computer")
-    print(f"   • Works offline")
-    print(f"   • Faster performance{Style.RESET_ALL}\n")
-    
-    while True:
-        try:
-            choice = input(f"{Fore.YELLOW}Enter your choice (1/2):{Style.RESET_ALL} ").strip()
-            
-            if choice == "1":
-                print(f"\n{Fore.CYAN}Testing Supabase connection...{Style.RESET_ALL}")
-                client = SupabaseClient(SUPABASE_URL, SUPABASE_KEY)
-                print(f"{Fore.GREEN}✓ Connected to Supabase successfully!{Style.RESET_ALL}\n")
-                return client
+    # Показываем Supabase опцию только если есть креды
+    if SUPABASE_URL and SUPABASE_KEY:
+        print(f"{Fore.CYAN}1. {Fore.WHITE}Supabase Cloud Database")
+        print(f"   {Fore.LIGHTBLACK_EX}• Data stored in the cloud")
+        print(f"   • Accessible from anywhere")
+        print(f"   • Requires internet connection{Style.RESET_ALL}\n")
+        
+        print(f"{Fore.CYAN}2. {Fore.WHITE}Local JSON Storage")
+        print(f"   {Fore.LIGHTBLACK_EX}• Data stored on your computer")
+        print(f"   • Works offline")
+        print(f"   • Faster performance{Style.RESET_ALL}\n")
+        
+        while True:
+            try:
+                choice = input(f"{Fore.YELLOW}Enter your choice (1/2):{Style.RESET_ALL} ").strip()
                 
-            elif choice == "2":
-                # Create client that will automatically find or create file
-                client = JsonStorageClient()
-                print(f"\n{Fore.GREEN}✓ Local storage initialized{Style.RESET_ALL}\n")
-                return client
-                
-            else:
-                print(f"\n{Fore.RED}❌ Invalid choice. Please enter 1 or 2.{Style.RESET_ALL}\n")
-                
-        except Exception as e:
-            print(f"\n{Fore.RED}❌ Error: {str(e)}")
-            print(f"Please try again.{Style.RESET_ALL}\n")
+                if choice == "1":
+                    print(f"\n{Fore.CYAN}Testing Supabase connection...{Style.RESET_ALL}")
+                    client = SupabaseClient(SUPABASE_URL, SUPABASE_KEY)
+                    print(f"{Fore.GREEN}✓ Connected to Supabase successfully!{Style.RESET_ALL}\n")
+                    return client
+                    
+                elif choice == "2":
+                    client = JsonStorageClient()
+                    print(f"\n{Fore.GREEN}✓ Local storage initialized{Style.RESET_ALL}\n")
+                    return client
+                    
+                else:
+                    print(f"\n{Fore.RED}❌ Invalid choice. Please enter 1 or 2.{Style.RESET_ALL}\n")
+                    
+            except Exception as e:
+                print(f"\n{Fore.RED}❌ Error: {str(e)}")
+                print(f"Please try again.{Style.RESET_ALL}\n")
+    else:
+        # Если нет кредов Supabase, сразу используем локальное хранилище
+        print(f"{Fore.CYAN}Using Local JSON Storage")
+        print(f"{Fore.LIGHTBLACK_EX}• Data stored on your computer")
+        print(f"• Works offline")
+        print(f"• Faster performance{Style.RESET_ALL}\n")
+        
+        client = JsonStorageClient()
+        print(f"{Fore.GREEN}✓ Local storage initialized{Style.RESET_ALL}\n")
+        return client
 
 def main():
     """Main function to run the crypto agent"""

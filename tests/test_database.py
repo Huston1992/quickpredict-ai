@@ -8,13 +8,13 @@ def test_verify_prediction(mock_db):
     """Test prediction verification"""
     # Arrange
     prediction_id = 1
-    current_price = 51000.0  # Цена выросла на 2% от 50000
+    current_price = 51000.0  # Price increased by 2% from 50000
     
     # Act
     result = mock_db.verify_prediction(prediction_id, current_price)
     
     # Assert
-    assert result == True  # Предсказание UP было верным
+    assert result == True  # UP prediction was correct
 
 def test_calculate_streaks(mock_db):
     """Test streak calculations"""
@@ -28,7 +28,7 @@ def test_calculate_streaks(mock_db):
             technical_indicator_id=1,
             timestamp=datetime.now(timezone.utc),
             verified=True,
-            correct=i < 3  # Первые 3 предсказания верные
+            correct=i < 3  # First 3 predictions are correct
         )
         for i in range(5)
     ]

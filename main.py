@@ -33,6 +33,8 @@ from src.analysis.prediction_analyzer import PredictionAnalyzer
 from src.database.supabase import SupabaseClient
 from src.models.prediction import Prediction
 from src.models.metrics import PerformanceMetrics
+from src.database.json_storage import JsonStorageClient
+from src.database.base import DatabaseInterface
 
 # Enable Windows console virtual terminal sequences
 if os.name == 'nt':
@@ -69,10 +71,10 @@ class CryptoAgent:
     Handles data collection, analysis, and display of results.
     """
 
-    def __init__(self):
-        """Initialize the CryptoAgent with necessary components and settings."""
+    def __init__(self, storage: DatabaseInterface):
+        """Initialize the CryptoAgent with chosen storage"""
         self.technical_analyzer = TechnicalAnalyzer()
-        self.db = SupabaseClient(SUPABASE_URL, SUPABASE_KEY)
+        self.db = storage
         self.last_prediction_id = None
         self.prediction_errors = 0
         self.max_errors = 3
@@ -189,7 +191,7 @@ class CryptoAgent:
                         price_change=price_change,
                         analysis_summary=analysis_summary,
                         prediction_text=prediction_text,
-                        prediction=prediction,  # Передаем объект prediction
+                        prediction=prediction,  # Pass prediction object
                         metrics=metrics
                     )
                 else:
@@ -315,7 +317,7 @@ class CryptoAgent:
                     if current_time - last_run >= self.update_interval:
                         self.run_analysis()
                         last_run = current_time
-                    time.sleep(1)  # Небольшая пауза чтобы не нагружать CPU
+                    time.sleep(1)  # Small pause to prevent CPU overload
                     
                 except KeyboardInterrupt:
                     logger.info(f"{Fore.YELLOW}Shutting down...{Style.RESET_ALL}")
@@ -329,7 +331,7 @@ class CryptoAgent:
                         logger.error(f"{Fore.RED}{EMOJI['error']} Maximum errors reached. Stopping...{Style.RESET_ALL}")
                         break
                     
-                    time.sleep(5)  # Пауза перед повторной попыткой
+                    time.sleep(5)  # Pause before retry
                     
         except Exception as e:
             logger.error(f"Fatal error: {str(e)}")
@@ -338,7 +340,10 @@ class CryptoAgent:
 
 def signal_handler(signum, frame):
     """Signal handler for graceful shutdown"""
-    logger.info(f"{Fore.YELLOW}Received termination signal. Stopping program...{Style.RESET_ALL}")
+    print("\n" + "═" * 50)
+    print(f"{Fore.YELLOW}👋 Thank you for using QuickPredict AI!")
+    print(f"Shutting down gracefully...{Style.RESET_ALL}")
+    print("═" * 50 + "\n")
     sys.exit(0)
 
 def test_supabase_connection():
@@ -364,8 +369,57 @@ def test_supabase_connection():
         logger.debug(f"Traceback: {traceback.format_exc()}")
         return False
 
+def choose_storage() -> DatabaseInterface:
+    """Let user choose storage type"""
+    print("\n" + "═" * 50)
+    print(f"{Fore.CYAN}🔮 QuickPredict AI - Storage Selection{Style.RESET_ALL}")
+    print("═" * 50 + "\n")
+    
+    print(f"{Fore.YELLOW}Please choose where to store prediction data:{Style.RESET_ALL}\n")
+    
+    print(f"{Fore.CYAN}1. {Fore.WHITE}Supabase Cloud Database")
+    print(f"   {Fore.LIGHTBLACK_EX}• Data stored in the cloud")
+    print(f"   • Accessible from anywhere")
+    print(f"   • Requires internet connection{Style.RESET_ALL}\n")
+    
+    print(f"{Fore.CYAN}2. {Fore.WHITE}Local JSON Storage")
+    print(f"   {Fore.LIGHTBLACK_EX}• Data stored on your computer")
+    print(f"   • Works offline")
+    print(f"   • Faster performance{Style.RESET_ALL}\n")
+    
+    while True:
+        try:
+            choice = input(f"{Fore.YELLOW}Enter your choice (1/2):{Style.RESET_ALL} ").strip()
+            
+            if choice == "1":
+                print(f"\n{Fore.CYAN}Testing Supabase connection...{Style.RESET_ALL}")
+                client = SupabaseClient(SUPABASE_URL, SUPABASE_KEY)
+                print(f"{Fore.GREEN}✓ Connected to Supabase successfully!{Style.RESET_ALL}\n")
+                return client
+                
+            elif choice == "2":
+                # Create client that will automatically find or create file
+                client = JsonStorageClient()
+                print(f"\n{Fore.GREEN}✓ Local storage initialized{Style.RESET_ALL}\n")
+                return client
+                
+            else:
+                print(f"\n{Fore.RED}❌ Invalid choice. Please enter 1 or 2.{Style.RESET_ALL}\n")
+                
+        except Exception as e:
+            print(f"\n{Fore.RED}❌ Error: {str(e)}")
+            print(f"Please try again.{Style.RESET_ALL}\n")
+
 def main():
     """Main function to run the crypto agent"""
+    # Clear screen and show welcome message
+    os.system('cls' if os.name == 'nt' else 'clear')
+    
+    print("\n" + "═" * 50)
+    print(f"{Fore.CYAN}🔮 Welcome to QuickPredict AI{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}🤖 Crypto Trading Assistant{Style.RESET_ALL}")
+    print("═" * 50 + "\n")
+    
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -376,13 +430,21 @@ def main():
             logger.error("Failed to connect to Supabase. Please check your credentials and connection.")
             sys.exit(1)
             
-        # Create and run agent
-        agent = CryptoAgent()
+        # Let user choose storage
+        storage = choose_storage()
+        
+        print(f"{Fore.CYAN}Initializing AI Trading Agent...{Style.RESET_ALL}")
+        time.sleep(1)  # Small pause for better UX
+        
+        # Create and run agent with chosen storage
+        agent = CryptoAgent(storage)
         agent.run()
         
     except Exception as e:
-        logger.error(f"Fatal error: {str(e)}")
+        logger.error(f"{Fore.RED}Fatal error: {str(e)}")
         logger.debug(f"Traceback: {traceback.format_exc()}")
+        
+        print(f"\n{Fore.RED}❌ An error occurred. Check crypto_agent.log for details.{Style.RESET_ALL}")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from ta.volatility import AverageTrueRange
 from ta.volatility import BollingerBands
 from ta.momentum import StochasticOscillator
 from ta.trend import ADXIndicator
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class TechnicalAnalyzer:
     """Technical analysis module for cryptocurrency price data"""
     
     def __init__(self):
-        """Initialize the technical analyzer"""
+        """Initialize the technical analyzer with configuration"""
         self.macd_fast = MACD_FAST
         self.macd_slow = MACD_SLOW
         self.macd_signal = MACD_SIGNAL
@@ -27,22 +27,28 @@ class TechnicalAnalyzer:
         self.min_periods = max(self.macd_slow + self.macd_signal, self.rsi_period)
         logger.info(f"Technical analysis initialization. Minimum {self.min_periods} candles required.")
 
-    def convert_to_dataframe(self, klines_data: list) -> pd.DataFrame:
-        """Convert Binance klines data to pandas DataFrame"""
-        df = pd.DataFrame(klines_data, columns=[
-            'timestamp', 'open', 'high', 'low', 'close', 
-            'volume', 'close_time', 'quote_volume', 'trades',
-            'taker_buy_base', 'taker_buy_quote', 'ignore'
-        ])
-        
-        # Convert string values to float
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = df[col].astype(float)
+    def convert_to_dataframe(self, klines_data: List[List[Union[int, str]]]) -> pd.DataFrame:
+        """Convert Binance klines data to pandas DataFrame with proper typing"""
+        try:
+            numeric_columns = ['open', 'high', 'low', 'close', 'volume']
+            df = pd.DataFrame(klines_data, columns=[
+                'timestamp', 'open', 'high', 'low', 'close', 
+                'volume', 'close_time', 'quote_volume', 'trades',
+                'taker_buy_base', 'taker_buy_quote', 'ignore'
+            ])
             
-        # Convert timestamp to datetime
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        
-        return df
+            # Convert numeric columns efficiently
+            for col in numeric_columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Convert timestamp once
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            
+            return df
+            
+        except Exception as e:
+            logger.error(f"Error converting klines data: {str(e)}")
+            raise ValueError("Invalid klines data format") from e
         
     def calculate_indicators(self, klines_data: list) -> pd.DataFrame:
         """Calculate technical indicators from kline data"""
@@ -116,30 +122,33 @@ class TechnicalAnalyzer:
             raise
 
     def calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
-        """Calculate ADX with protection from division by zero"""
+        """Calculate ADX with improved error handling and NaN protection"""
         try:
-            # Получаем +DI и -DI
-            plus_di = ta.trend.DirectionalIndicator(
-                high=df['high'],
-                low=df['low'],
-                close=df['close'],
-                window=period,
-                fillna=True
-            )
+            # Защита от NaN значений используя ffill() вместо fillna(method='ffill')
+            high = df['high'].ffill()
+            low = df['low'].ffill()
+            close = df['close'].ffill()
             
-            # Защита от деления на ноль
-            dip = plus_di._dip
-            din = plus_di._din
-            value = plus_di._atr
+            # Расчет True Range
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = tr.rolling(window=period).mean()
             
-            # Где value == 0, заменяем на очень маленькое число
-            value = np.where(value == 0, 1e-10, value)
+            # Расчет направленного движения
+            up_move = high - high.shift(1)
+            down_move = low.shift(1) - low
             
-            plus_di = 100 * (dip / value)
-            minus_di = 100 * (din / value)
+            plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+            minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
             
-            # Рассчитываем ADX
-            dx = abs(plus_di - minus_di) / (plus_di + minus_di) * 100
+            # Сглаживание
+            plus_di = 100 * pd.Series(plus_dm).rolling(period).mean() / atr
+            minus_di = 100 * pd.Series(minus_dm).rolling(period).mean() / atr
+            
+            # Расчет ADX
+            dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
             adx = pd.Series(dx).rolling(window=period).mean()
             
             return adx.fillna(0)
@@ -172,33 +181,44 @@ class TechnicalAnalyzer:
         
         return trend
 
-    def get_macd_color_change(self, df):
-        """Determine MACD color and trend"""
+    def get_macd_color_change(self, df: pd.DataFrame) -> str:
+        """Determine MACD color and trend with improved accuracy"""
         try:
             current_hist = df['macd_histogram'].iloc[-1]
             prev_hist = df['macd_histogram'].iloc[-2]
             
+            # Добавляем порог для определения значимого изменения
+            threshold = 0.000001
+            
+            if abs(current_hist) < threshold:
+                return "neutral"
+            
             if current_hist > 0:
-                return "green and strengthening" if current_hist > prev_hist else "green but weakening"
+                return "green and strengthening" if current_hist > prev_hist + threshold else "green but weakening"
             else:
-                return "red and strengthening" if current_hist < prev_hist else "red but weakening"
+                return "red and strengthening" if current_hist < prev_hist - threshold else "red but weakening"
             
         except Exception as e:
             logger.error(f"Error analyzing MACD: {str(e)}")
             return "neutral"
 
-    def get_volume_trend(self, df):
-        """Analyze volume trend"""
+    def get_volume_trend(self, df: pd.DataFrame) -> str:
+        """Analyze volume trend with improved thresholds"""
         try:
             recent_volume = df['volume'].tail(5)
-            avg_volume = df['volume'].mean()
+            avg_volume = df['volume'].tail(20).mean()  # Увеличили период для среднего
             current_volume = recent_volume.iloc[-1]
             volume_change = recent_volume.pct_change().mean()
             
-            if current_volume > avg_volume * 1.5:
+            # Добавляем более точные пороги
+            if current_volume > avg_volume * 2:
+                return "extremely high" if volume_change > 0 else "extremely low"
+            elif current_volume > avg_volume * 1.5:
                 return "strongly increasing" if volume_change > 0 else "strongly decreasing"
             elif current_volume > avg_volume * 1.2:
                 return "increasing" if volume_change > 0 else "decreasing"
+            elif current_volume < avg_volume * 0.8:
+                return "low"
             else:
                 return "stable"
             
